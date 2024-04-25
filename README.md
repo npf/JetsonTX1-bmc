@@ -24,3 +24,5 @@ Serial console
 
 Debug
 - WEMOS USB <-> PC USB 38400 bauds
+
+![Setup in picture](https://github.com/npf/JetsonTX1-bmc/blob/main/Setup.jpg?raw=true)
