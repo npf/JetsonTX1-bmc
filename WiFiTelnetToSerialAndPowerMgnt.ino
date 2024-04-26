@@ -21,7 +21,6 @@
   You should have received a copy of the GNU Lesser General Public
   License along with this library; if not, write to the Free Software
   Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
-
 */
 
 /*
@@ -62,15 +61,16 @@
 #define BAUD_LOGGER 38400
 #define RXBUFFERSIZE 1024
 
-#define POWER_INTERVAL 30000
+#define POWER_INTERVAL 40000
 #define POWER_DELAY_ON 200
 #define POWER_DELAY_OFF 8000
 #define KEY_CMD '&'
 #define KEY_POWER_ON '1'
 #define KEY_POWER_OFF '0'
-#define KEY_POWER_REBOOT '8'
-#define KEY_SERIAL_FLUSH '7'
-#define KEY_SERIAL_RESET '9'
+#define KEY_POWER_RESET 'r'
+#define KEY_ESP_RESET 'c'
+#define KEY_ESP_UPTIME 'u'
+#define KEY_HELP '?'
 
 #define PIN_POWER 4 // WEMOS D2 is PIN 4 is down (0V) at boot
 #define PIN_LED LED_BUILTIN 
@@ -215,13 +215,16 @@ void loop() {
       size_t tcp_got = serverClients[i].read(buf, maxToSerial);
 
       if (tcp_got >= 2 && (char) buf[0] == KEY_CMD) {
+        size_t msglen;
+        char msg[80];
+        unsigned int s, m, h, d;
         logger->printf("[%lu] Read %c%c\n", currentMillis, (char) buf[0], (char) buf[1]);
         switch ((char) buf[1]) {
           case KEY_POWER_OFF:
             autoPowerOn = false;
             logger->printf("[%lu] Unactivate auto power-on\n", currentMillis);
             // Then, go on with the reboot code (no break)
-          case KEY_POWER_REBOOT:
+          case KEY_POWER_RESET:
             nextLowMillis = currentMillis + POWER_DELAY_OFF;
             if (nextLowMillis) nextLowMillis++; // avoid 0 when overflow
             nextHighMillis = 0;
@@ -237,16 +240,37 @@ void loop() {
               if (nextHighMillis) nextHighMillis++; // avoid 0 when overflow
             }
             break;
-          case KEY_SERIAL_RESET:
-            logger->printf("[%lu] Reset serial line\n", currentMillis);
-            Serial.end();
-            delay(100);
-            Serial.begin(BAUD_SERIAL);
-            Serial.setRxBufferSize(RXBUFFERSIZE);
+          case KEY_ESP_RESET:
+            logger->printf("[%lu] Reset ESP\n", currentMillis);
+            msglen = sprintf(msg, "[Reseting ESP]\n");
+            for (int i = 0; i < MAX_SRV_CLIENTS; i++)
+              if (serverClients[i].availableForWrite() >= msglen) {
+                serverClients[i].write(msg, msglen);
+                serverClients[i].flush();
+              }
+            ESP.wdtDisable();
+            while (1) {};
             break;
-          case KEY_SERIAL_FLUSH:
-            logger->printf("[%lu] Flush serial line\n", currentMillis);
-            Serial.flush();
+          case KEY_ESP_UPTIME:
+            logger->printf("[%lu] Show ESP uptime\n", currentMillis);
+            s = currentMillis / 1000;
+            m = s / 60;
+            s %= 60;
+            h = m / 60;
+            m %= 60;
+            d = h / 24;
+            h %= 24;
+            msglen = sprintf(msg, "[%ud-%uh:%um:%us]\n", d, h, m, s);
+            for (int i = 0; i < MAX_SRV_CLIENTS; i++)
+              if (serverClients[i].availableForWrite() >= msglen)
+                serverClients[i].write(msg, msglen);
+            break;
+          case KEY_HELP:
+            logger->printf("[%lu] Show help\n", currentMillis);
+            msglen = sprintf(msg, "[ON:%c OFF:%c RESET:%c ESP-RESET:%c ESP-UPTIME:%c]\n", KEY_POWER_ON, KEY_POWER_OFF, KEY_POWER_RESET, KEY_ESP_RESET, KEY_ESP_UPTIME);
+            for (int i = 0; i < MAX_SRV_CLIENTS; i++)
+              if (serverClients[i].availableForWrite() >= msglen)
+                serverClients[i].write(msg, msglen);
             break;
         } 
       } else {
